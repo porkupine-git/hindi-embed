@@ -33,6 +33,9 @@ const ALLOWED_ORIGINS = [
     'https://anixohindi.cc',
     'https://www.anixohindi.cc',
     'https://embed.anixohindi.cc',
+    'https://anixo.online',
+    'https://www.anixo.online',
+    'https://anixo.buzz',
     'http://localhost:3000',
     'http://localhost:4010',
     'http://localhost:8000',
@@ -173,6 +176,8 @@ function isAuthorizedStreamRequest(req) {
     const allowedPatterns = [
         'embed.anixohindi.cc',
         'anixohindi.cc',
+        'anixo.online',
+        'anixo.buzz',
         'localhost',
         '127.0.0.1'
     ];
@@ -259,11 +264,25 @@ function resolveEpisode({ anilistId = null, malId = null, hindiId = null, episod
             return db.prepare(query).get(hindiId, episode);
         }
 
+        // Automatic MAL -> AniList resolution via anizip_mappings if anilistId is not provided
+        if (!anilistId && malId) {
+            try {
+                const mapRow = db.prepare('SELECT anilist_id FROM anizip_mappings WHERE mal_id = ? LIMIT 1').get(malId);
+                if (mapRow && mapRow.anilist_id) {
+                    anilistId = mapRow.anilist_id;
+                }
+            } catch {}
+        }
+
         let query = `
             SELECT e.telegram_message_id, e.file_size_bytes, e.duration_seconds, a.title_english, a.anilist_id, a.mal_id, a.id as hindi_id
             FROM telegram_hindi_episodes e
             JOIN telegram_hindi_anime a ON e.anime_id = a.id
-            WHERE (a.anilist_id = ? OR a.mal_id = ?) 
+            WHERE (
+                (a.anilist_id IS NOT NULL AND a.anilist_id != 0 AND a.anilist_id = ?) 
+                OR 
+                (a.mal_id IS NOT NULL AND a.mal_id != 0 AND a.mal_id = ?)
+            )
               AND e.episode_number = ? 
               AND e.is_uploaded = 1
             LIMIT 1;
